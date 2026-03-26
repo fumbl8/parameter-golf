@@ -139,3 +139,7 @@
 - dataset changes
 - risky test-time training variants
 - per-token routing unless later evidence justifies it
+
+## Session Note
+
+- 2026-03-26 donor reproduction completed and is documented in `EXPERIMENT_LEDGER.md`; novel implementation work remains out of scope for this session.

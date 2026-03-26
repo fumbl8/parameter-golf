@@ -233,3 +233,67 @@ torchrun --standalone --nproc_per_node=8 train_gpt.py
 ```
 
 - Only start the recurrence fork after the donor is reproduced within the planned gate.
+
+## 2026-03-26 Donor Reproduction
+
+- Branch: `codex/helix-genome-lm`
+- Target donor: `records/track_10min_16mb/2026-03-22_11L_EMA_GPTQ-lite_warmdown3500_QAT015_1.1233`
+- Status: completed
+
+### Environment Verification
+
+- Python: `3.12.3`
+- Packages: `torch 2.9.1+cu128`, `numpy 2.4.3`, `sentencepiece 0.2.1`, `tqdm 4.67.3`
+- CUDA: visible, `1x NVIDIA H100 80GB HBM3`
+- Dataset path present: `./data/datasets/fineweb10B_sp1024`
+- Tokenizer path present: `./data/tokenizers/fineweb_1024_bpe.model`
+- Corrected during session: installed `zstandard 0.25.0`; downloaded `80` train shards for `fineweb10B_sp1024`.
+
+### Donor Summary
+
+- Donor command: `torchrun --standalone --nproc_per_node=8 train_gpt.py`
+- Donor documented result: `val_loss 1.89576235`, `val_bpb 1.12278022`, `bytes_total 15555017`.
+- Local faithful command:
+
+```bash
+env RUN_ID=codex-donor-repro SEED=1337 MAX_WALLCLOCK_SECONDS=4800 \
+DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 \
+TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model \
+torchrun --standalone --nproc_per_node=1 \
+records/track_10min_16mb/2026-03-22_11L_EMA_GPTQ-lite_warmdown3500_QAT015_1.1233/train_gpt.py > codex_donor_repro.out 2>&1
+```
+
+### Smoke Summary
+
+- Smoke attempt 1 failed before training because the donor script was launched from the donor subdirectory and its default relative tokenizer path resolved incorrectly.
+- Smoke attempt 2 succeeded from repo root with explicit `DATA_PATH` and `TOKENIZER_PATH`.
+- Smoke metrics: `step 90`, `60166ms` train time, `step_avg 668.51ms`, `post_ema val_bpb 3.5332`, `final_int6_roundtrip val_bpb 3.54495443`.
+
+### Faithful Reproduction Outcome
+
+- Training stop: `step 7235`, `train_time 4800031ms`, `step_avg 663.45ms`
+- Pre-EMA stop metric: `val_loss 1.9235`, `val_bpb 1.1392`
+- Post-EMA diagnostic: `val_loss 1.9219`, `val_bpb 1.1383`
+- Int6 roundtrip: `val_loss 1.93603026`, `val_bpb 1.14662617`
+- Final stride-64 sliding: `val_loss 1.89588330`, `val_bpb 1.12285185`
+- Sliding eval wallclock: `584544ms`
+- End-to-end run time excluding setup/downloads: about `5384.6s`
+
+### Artifact Sizes
+
+- `final_model.pt`: `106178569` bytes
+- `final_model.int6.ptz`: `16073037` bytes
+- Total submission size: `16140640` bytes
+
+### Comparison To Donor
+
+- Final sliding `val_bpb` delta vs donor: `+0.00007163`
+- This is within the requested `+0.004` donor reproduction tolerance.
+- Donor quality was reproduced within tolerance on this pod.
+
+### Remaining Deviations
+
+- Local reproduction used `WORLD_SIZE=1` with grad accumulation `8`, not donor `WORLD_SIZE=8`.
+- Local wallclock cap was increased to `4800s` to match donor step depth on one GPU.
+- SWA and late-QAT landed slightly later than donor: `swa:start 6550` vs `6450`, `late_qat 6713` vs `6574`.
+- Compressed bytes did not match donor: total bytes were `+585623` over donor and exceeded the donor's `15.55 MB` artifact.

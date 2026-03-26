@@ -76,3 +76,7 @@ python -m py_compile records/.../train_gpt.py
 
 - Leave the worktree clean relative to the work started in the session.
 - Do not leave behind stray scratch files, abandoned record folders, or half-updated submission metadata.
+
+## Session Note
+
+- 2026-03-26 donor reproduction work stayed within the existing repo guardrails: root `train_gpt.py`, tokenizer logic, dataset logic, and `records/track_10min_16mb/2026-03-25_HelixGenomeLM` remained untouched.
