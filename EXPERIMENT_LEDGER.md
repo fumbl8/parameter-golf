@@ -371,3 +371,99 @@ records/track_10min_16mb/2026-03-22_11L_EMA_GPTQ-lite_warmdown3500_QAT015_1.1233
 - Kill criteria triggered: `val_bpb` is worse by far more than `0.010` on the quick comparison.
 - The byte-efficiency upside is real, but not enough to justify a longer non-record pass for this exact v1 design.
 - HelixRecur v1 is a no-go as currently implemented.
+
+## 2026-03-27 HelixRecur v2 Byte Budget Note
+
+- Base for v2: `records/track_non_record_16mb/2026-03-26_HelixRecur_v1`
+- Donor reproduced artifact: compressed `16073037`, total `16140640`, over cap by `140640`
+- v1 quick artifact: compressed `3081539`, total `3150613`
+- v2 adds exactly `44` trainable parameters via an `11 x 4` virtual-depth conditioning table
+- v2 parameter count: `15187040` vs v1 `15186996` (`+44`)
+- v2 code bytes: `70777` vs v1 `69074` (`+1703` code bytes risk)
+- Expected byte effect: preserve recurrence-driven model reuse while spending a negligible parameter budget to recover depth-specific behavior
+- Main code-size risk: extra override plumbing for LN scale, attention scale, MLP scale, and `q_gain`
+
+## 2026-03-27 HelixRecur v2 Implementation And Evaluation
+
+- New folder: `records/track_non_record_16mb/2026-03-26_HelixRecur_v2`
+- Hypothesis only: keep the v1 recurrent stack and add a tiny virtual-depth conditioning mechanism so repeated passes can recover a small amount of depth-specific specialization
+- Preserved unchanged from v1 and donor: tied embeddings, BigramHash, SmearGate, shared value embeddings, optimizer family, quantization/compression path, and eval path
+- Added conditioning only on existing scalar pathways: LN scale, attention scale, MLP scale, and attention `q_gain`
+
+### Commands Run
+
+- Compile sanity:
+  - `python -m py_compile records/track_non_record_16mb/2026-03-26_HelixRecur_v2/train_gpt.py`
+- Instantiate sanity:
+  - `python - <<'PY' ... import records/track_non_record_16mb/2026-03-26_HelixRecur_v2/train_gpt.py and instantiate GPT ... PY`
+- Train smoke:
+  - `env RUN_ID=helixrecur2-train-smoke SEED=1337 MAX_WALLCLOCK_SECONDS=45 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-26_HelixRecur_v2/train_gpt.py > helixrecur2_train_smoke.out 2>&1`
+- Eval smoke:
+  - `env RUN_ID=helixrecur2-eval-smoke SEED=1337 MAX_WALLCLOCK_SECONDS=1 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-26_HelixRecur_v2/train_gpt.py > helixrecur2_eval_smoke.out 2>&1`
+- Initial quick comparison attempt:
+  - `env RUN_ID=helixrecur2-quickcmp SEED=1337 MAX_WALLCLOCK_SECONDS=180 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-26_HelixRecur_v2/train_gpt.py > helixrecur2_quickcmp.out 2>&1`
+- Fair solo quick comparison used for judgment:
+  - `env RUN_ID=helixrecur2-quickcmp-solo SEED=1337 MAX_WALLCLOCK_SECONDS=180 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-26_HelixRecur_v2/train_gpt.py > helixrecur2_quickcmp_solo.out 2>&1`
+- Longer non-record pass:
+  - `env RUN_ID=helixrecur2-long SEED=1337 MAX_WALLCLOCK_SECONDS=600 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-26_HelixRecur_v2/train_gpt.py > helixrecur2_long.out 2>&1`
+
+### Sanity Results
+
+- Compile sanity passed
+- Instantiate sanity:
+  - `v2_model_params 15187040`
+  - `v2_depth_condition_params 44`
+  - `v2_shared_num_layers 6`
+  - `v2_virtual_schedule 0,1,2,3,4,5,4,3,2,1,0`
+
+### Smoke Results
+
+- Train smoke:
+  - stop `45.986s`, `step 21`, `step_avg 2189.81ms`
+  - `val_loss 8.5216`, `val_bpb 5.0470`
+  - post-EMA `val_loss 6.6014`, `val_bpb 3.9097`
+  - compressed `2674700`, total `2745477`
+- Eval smoke:
+  - stop `1.587s`, `step 1`
+  - `val_loss 8.7284`, `val_bpb 5.1694`
+  - post-EMA `val_loss 6.9191`, `val_bpb 4.0979`
+  - compressed `2654379`, total `2725156`
+- Note on methodology:
+  - the first smoke and initial quick run were launched concurrently on one GPU; those runs remain valid sanity checks, but not fair wallclock comparisons against v1
+
+### Quick Comparison Used For Judgment
+
+- Donor quick reference from prior ledger entry:
+  - `val_loss 7.55493163`, `val_bpb 4.47445606`, compressed `5019273`, total `5086876`, `step_avg 668.25ms`
+- HelixRecur v1 quick reference from prior ledger entry:
+  - `val_loss 7.85509273`, `val_bpb 4.65222837`, compressed `3081539`, total `3150613`, `step_avg 655.32ms`
+- HelixRecur v2 solo quick:
+  - stop `180.484s`, `step 267`, `step_avg 675.97ms`
+  - pre-roundtrip stop metric: `val_loss 3.7819`, `val_bpb 2.2398`
+  - final roundtrip exact: `val_loss 7.54165596`, `val_bpb 4.46659346`
+  - compressed `3042658`, total `3113435`
+
+### v1 vs v2 Quick Delta
+
+- `val_loss`: `-0.31343677`
+- `val_bpb`: `-0.18563491`
+- `step_avg`: `+20.65ms` (`+3.15%`)
+- compressed bytes: `-38881`
+- total bytes: `-37178`
+- Added conditioning parameter count: `+44`
+
+### Longer Non-record Pass
+
+- HelixRecur v2 long:
+  - stop `600.504s`, `step 888`, `step_avg 676.24ms`
+  - stop metric: `val_loss 2.4185`, `val_bpb 1.4324`
+  - post-EMA `val_loss 2.6283`, `val_bpb 1.5566`
+  - final roundtrip exact: `val_loss 4.63764717`, `val_bpb 2.74667588`
+  - compressed `4224324`, total `4295101`
+
+### Judgment
+
+- The narrow rescue hypothesis worked on the quick comparison: v2 recovers quality materially relative to v1 while keeping the recurrence byte win.
+- The solo runtime story is acceptable: v2 remains close to v1 in `step_avg` once measured without GPU contention.
+- Byte efficiency remains clearly favorable versus donor and slightly better than v1.
+- HelixRecur v2 is worth keeping as the current recurrence line.
