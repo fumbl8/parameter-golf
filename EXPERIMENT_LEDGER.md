@@ -564,3 +564,105 @@ records/track_10min_16mb/2026-03-22_11L_EMA_GPTQ-lite_warmdown3500_QAT015_1.1233
 - That gain did not hold in the longer pass, where v3 trailed v2 materially on quality.
 - The implementation remains small and within the byte-efficiency story, but the result is not strong enough to replace v2.
 - Stop stacking recurrence rescue changes in this session; `HelixRecur_v2` remains the active recurrence line.
+
+## 2026-03-27 HelixRecur v2 Tournament Setup
+
+- Branch: `codex/helix-genome-lm`
+- Champion baseline: `records/track_non_record_16mb/2026-03-26_HelixRecur_v2`
+- Champion quick anchor already recorded: `val_loss 7.54165596`, `val_bpb 4.46659346`, `step_avg 675.97ms`, compressed `3042658`, total `3113435`
+- Champion long anchor already recorded: `val_loss 4.63764717`, `val_bpb 2.74667588`, `step_avg 676.24ms`, compressed `4224324`, total `4295101`
+- v3 status already recorded: no-go. Quick improved slightly, but the `600s` pass was worse than v2, so v2 remains champion.
+- Tournament challengers created from v2 only:
+  - `records/track_non_record_16mb/2026-03-27_HelixRecur_v2a_rank8`
+  - `records/track_non_record_16mb/2026-03-27_HelixRecur_v2b_retarget`
+  - `records/track_non_record_16mb/2026-03-27_HelixRecur_v2c_specialist`
+- Quick-comparison command pattern for all challengers:
+  - `env RUN_ID=<variant>-quickcmp SEED=1337 MAX_WALLCLOCK_SECONDS=180 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/.../train_gpt.py > <variant>_quickcmp.out 2>&1`
+- Tournament hypotheses:
+  - `v2a_rank8`: widen the virtual-depth table from `11 x 4` to `11 x 8` and keep the same four scalar outputs.
+  - `v2b_retarget`: keep the same tiny `11 x 4` budget but retarget it to attention-side controls only.
+  - `v2c_specialist`: keep v2 conditioning and add only tiny edge-depth residual specialist scales.
+
+## 2026-03-27 HelixRecur v2 Tournament Results
+
+- Champion baseline stayed `records/track_non_record_16mb/2026-03-26_HelixRecur_v2`.
+- Fair v2 quick anchor from prior ledger entry: `val_loss 7.54165596`, `val_bpb 4.46659346`, `step_avg 675.97ms`, compressed `3042658`, total `3113435`.
+- Fair v2 long anchor from prior ledger entry: `val_loss 4.63764717`, `val_bpb 2.74667588`, `step_avg 676.24ms`, compressed `4224324`, total `4295101`.
+- v3 remains a no-go and was not used as a base for any challenger.
+
+### Commands Run
+
+- Compile sanity:
+  - `python -m py_compile records/track_non_record_16mb/2026-03-27_HelixRecur_v2a_rank8/train_gpt.py`
+  - `python -m py_compile records/track_non_record_16mb/2026-03-27_HelixRecur_v2b_retarget/train_gpt.py`
+  - `python -m py_compile records/track_non_record_16mb/2026-03-27_HelixRecur_v2c_specialist/train_gpt.py`
+- Instantiate sanity:
+  - `python - <<'PY' ... instantiate v2a/v2b/v2c GPT models from their local train_gpt.py files ... PY`
+- Quick tournament:
+  - `env RUN_ID=helixrecur2a-quickcmp SEED=1337 MAX_WALLCLOCK_SECONDS=180 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-27_HelixRecur_v2a_rank8/train_gpt.py > helixrecur2a_quickcmp.out 2>&1`
+  - `env RUN_ID=helixrecur2b-quickcmp SEED=1337 MAX_WALLCLOCK_SECONDS=180 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-27_HelixRecur_v2b_retarget/train_gpt.py > helixrecur2b_quickcmp.out 2>&1`
+  - `env RUN_ID=helixrecur2c-quickcmp SEED=1337 MAX_WALLCLOCK_SECONDS=180 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-27_HelixRecur_v2c_specialist/train_gpt.py > helixrecur2c_quickcmp.out 2>&1`
+- Runtime-abort commands for stalled challengers:
+  - `kill 207954 207886 207885`
+  - `kill 218150 218082 218081`
+- Single authorized longer pass for the quick winner:
+  - `env RUN_ID=helixrecur2a-long SEED=1337 MAX_WALLCLOCK_SECONDS=600 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-27_HelixRecur_v2a_rank8/train_gpt.py > helixrecur2a_long.out 2>&1`
+
+### Sanity Results
+
+- `v2a_model_params 15187084`, added vs v2 `+44`, virtual-depth table params `88`
+- `v2b_model_params 15187040`, added vs v2 `+0`, virtual-depth table params `44`
+- `v2c_model_params 15187044`, added vs v2 `+4`, virtual-depth table params `44`, specialist params `4`
+- All three challengers compiled and instantiated with the same shared-depth schedule `0,1,2,3,4,5,4,3,2,1,0`
+
+### Quick Tournament Results
+
+- `v2a_rank8`:
+  - final roundtrip `val_loss 7.50140432`, `val_bpb 4.44275417`
+  - `step_avg 679.19ms`
+  - compressed `3085937`, total `3156750`
+  - delta vs v2 quick: `val_loss -0.04025164`, `val_bpb -0.02383929`, `step_avg +3.22ms`, compressed `+431279`, total `+432315`
+  - judgment: quick winner; meaningful quality gain, modest runtime cost, material byte regression versus v2 but still far under cap
+- `v2b_retarget`:
+  - comparable final quick metric: not produced
+  - artifact bytes: not produced
+  - early visible `step_avg 679.51ms`
+  - delta vs v2 quick: runtime no-go before a fair final comparison
+  - judgment: killed for runtime discipline failure after the direct log stopped progressing and the process stayed live
+- `v2c_specialist`:
+  - comparable final quick metric: not produced
+  - artifact bytes: not produced
+  - early visible `step_avg 688.71ms`
+  - delta vs v2 quick: runtime no-go before a fair final comparison
+  - judgment: killed for runtime discipline failure after the direct log stopped progressing and the process stayed live
+
+### Ranked Table
+
+| Rank | Variant | Quick val_bpb | Quick total bytes | Runtime note | Judgment |
+|---|---|---:|---:|---|---|
+| `1` | `v2a_rank8` | `4.44275417` | `3156750` | `679.19ms` | quick winner |
+| `2` | `v2` champion | `4.46659346` | `3113435` | `675.97ms` | baseline anchor |
+| `3` | `v2b_retarget` | `n/a` | `n/a` | stalled | no-go |
+| `4` | `v2c_specialist` | `n/a` | `n/a` | stalled | no-go |
+
+### Longer Pass For Quick Winner
+
+- `v2a_rank8` earned the single longer pass by beating v2 on the quick proxy by `0.02383929 val_bpb`.
+- `v2a` long result:
+  - final roundtrip `val_loss 4.71987996`, `val_bpb 2.79537877`
+  - `step_avg 678.98ms`
+  - compressed `4212788`, total `4283601`
+- delta vs v2 long:
+  - `val_loss +0.08223279`
+  - `val_bpb +0.04870289`
+  - `step_avg +2.74ms`
+  - compressed `-11536`
+  - total `-11500`
+- replacement decision: `v2a` does not replace `v2` as champion
+
+### Judgment
+
+- The tournament succeeded in the information-per-GPU-minute sense: one challenger (`v2a`) clearly won the quick proxy and earned the longer pass, while two others (`v2b`, `v2c`) were killed early on runtime discipline.
+- `v2a` showed that more conditioning capacity can sharpen the quick proxy, but its longer trajectory was worse than v2 despite a slightly smaller final artifact.
+- `v2` remains the active recurrence champion.
+- No further recurrence micro-variants should be stacked in this session without a materially different hypothesis.

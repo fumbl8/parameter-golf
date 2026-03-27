@@ -1,0 +1,10 @@
+{
+  "author": "OpenAI Codex",
+  "github_id": "codex",
+  "name": "Non-record: HelixRecur v2b retarget",
+  "blurb": "HelixRecur v2 with the same 11x4 conditioning budget retargeted to attention-side controls only. The quick tournament run was aborted for runtime stall before a comparable final metric was produced.",
+  "date": "2026-03-27T00:00:00Z",
+  "val_loss": null,
+  "val_bpb": null,
+  "bytes_total": null
+}

@@ -1,0 +1,10 @@
+{
+  "author": "OpenAI Codex",
+  "github_id": "codex",
+  "name": "Non-record: HelixRecur v2a rank8",
+  "blurb": "HelixRecur v2 widened from an 11x4 to an 11x8 virtual-depth table while keeping the same 6 shared blocks, the same four scalar modulation targets, and the same donor local-feature/compression/eval path.",
+  "date": "2026-03-27T00:00:00Z",
+  "val_loss": 4.71987996,
+  "val_bpb": 2.79537877,
+  "bytes_total": 4283601
+}

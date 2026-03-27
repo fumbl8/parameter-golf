@@ -1,0 +1,10 @@
+{
+  "author": "OpenAI Codex",
+  "github_id": "codex",
+  "name": "Non-record: HelixRecur v2c specialist",
+  "blurb": "HelixRecur v2 plus tiny edge-depth residual specialist scales for virtual depths 0, 1, 9, and 10. The quick tournament run was aborted for runtime stall before a comparable final metric was produced.",
+  "date": "2026-03-27T00:00:00Z",
+  "val_loss": null,
+  "val_bpb": null,
+  "bytes_total": null
+}
