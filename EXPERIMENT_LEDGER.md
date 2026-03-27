@@ -467,3 +467,100 @@ records/track_10min_16mb/2026-03-22_11L_EMA_GPTQ-lite_warmdown3500_QAT015_1.1233
 - The solo runtime story is acceptable: v2 remains close to v1 in `step_avg` once measured without GPU contention.
 - Byte efficiency remains clearly favorable versus donor and slightly better than v1.
 - HelixRecur v2 is worth keeping as the current recurrence line.
+
+## 2026-03-27 HelixRecur v3 Byte Budget Note
+
+- Base for v3: `records/track_non_record_16mb/2026-03-26_HelixRecur_v2`
+- v2 quick artifact: compressed `3042658`, total `3113435`
+- v3 change adds exactly `4` trainable parameters: bounded learnable amplitudes for the existing four conditioning channels
+- v3 parameter count: `15187044` vs v2 `15187040` (`+4`)
+- v3 code bytes: `70888` vs v2 `70777` (`+111` code bytes risk)
+- Expected effect: keep the same recurrence hypothesis and same `11 x 4` virtual-depth table, but let each conditioning channel learn its own bounded strength instead of sharing fixed `0.05`
+- Main risk: the extra freedom may help short-run specialization but not longer-run convergence
+
+## 2026-03-27 HelixRecur v3 Implementation And Evaluation
+
+- New folder: `records/track_non_record_16mb/2026-03-27_HelixRecur_v3`
+- Hypothesis only: keep HelixRecur v2 intact except for replacing the fixed conditioning strength with bounded learnable per-channel amplitudes
+- Preserved unchanged from v2: shared blocks, virtual schedule, tied embeddings, BigramHash, SmearGate, shared value embeddings, optimizer family, quantization/compression path, and eval path
+- Added parameters only in the conditioning path: `4` amplitude logits, one for each existing conditioned channel
+
+### Commands Run
+
+- Compile sanity:
+  - `python -m py_compile records/track_non_record_16mb/2026-03-27_HelixRecur_v3/train_gpt.py`
+- Instantiate sanity:
+  - `python - <<'PY' ... import records/track_non_record_16mb/2026-03-27_HelixRecur_v3/train_gpt.py and instantiate GPT ... PY`
+- Train smoke:
+  - `env RUN_ID=helixrecur3-train-smoke SEED=1337 MAX_WALLCLOCK_SECONDS=45 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-27_HelixRecur_v3/train_gpt.py > helixrecur3_train_smoke.out 2>&1`
+- Eval smoke:
+  - `env RUN_ID=helixrecur3-eval-smoke SEED=1337 MAX_WALLCLOCK_SECONDS=1 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-27_HelixRecur_v3/train_gpt.py > helixrecur3_eval_smoke.out 2>&1`
+- Solo quick comparison:
+  - `env RUN_ID=helixrecur3-quickcmp SEED=1337 MAX_WALLCLOCK_SECONDS=180 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-27_HelixRecur_v3/train_gpt.py > helixrecur3_quickcmp.out 2>&1`
+- Longer non-record pass:
+  - `env RUN_ID=helixrecur3-long SEED=1337 MAX_WALLCLOCK_SECONDS=600 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-27_HelixRecur_v3/train_gpt.py > helixrecur3_long.out 2>&1`
+
+### Sanity Results
+
+- Compile sanity passed
+- Instantiate sanity:
+  - `v3_model_params 15187044`
+  - `v3_depth_condition_params 44`
+  - `v3_amplitude_params 4`
+  - `v3_added_vs_v2 4`
+  - `v3_shared_num_layers 6`
+  - `v3_virtual_schedule 0,1,2,3,4,5,4,3,2,1,0`
+  - initial amplitudes: `0.05,0.05,0.05,0.05`
+
+### Smoke Results
+
+- Train smoke:
+  - stop `45.526s`, `step 67`, `step_avg 679.49ms`
+  - `val_loss 6.0885`, `val_bpb 3.6059`
+  - post-EMA `val_loss 6.0704`, `val_bpb 3.5952`
+  - compressed `2792884`, total `2863772`
+- Eval smoke:
+  - stop `1.384s`, `step 2`
+  - `val_loss 8.7316`, `val_bpb 5.1714`
+  - post-EMA `val_loss 6.9062`, `val_bpb 4.0902`
+  - compressed `2623182`, total `2694070`
+
+### v2 vs v3 Quick Comparison
+
+- HelixRecur v2 quick reference from prior ledger entry:
+  - `val_loss 7.54165596`, `val_bpb 4.46659346`, compressed `3042658`, total `3113435`, `step_avg 675.97ms`
+- HelixRecur v3 quick:
+  - stop `180.019s`, `step 266`, `step_avg 676.76ms`
+  - pre-roundtrip stop metric: `val_loss 3.7825`, `val_bpb 2.2402`
+  - final roundtrip exact: `val_loss 7.52554692`, `val_bpb 4.45705278`
+  - compressed `3114457`, total `3185345`
+- Delta vs v2 quick:
+  - `val_loss`: `-0.01610904`
+  - `val_bpb`: `-0.00954068`
+  - `step_avg`: `+0.79ms` (`+0.12%`)
+  - compressed bytes: `+71799`
+  - total bytes: `+71910`
+
+### Longer Non-record Pass
+
+- HelixRecur v2 long reference from prior ledger entry:
+  - `val_loss 4.63764717`, `val_bpb 2.74667588`, compressed `4224324`, total `4295101`, `step_avg 676.24ms`
+- HelixRecur v3 long:
+  - stop `600.276s`, `step 885`, `step_avg 678.28ms`
+  - stop metric: `val_loss 2.4200`, `val_bpb 1.4333`
+  - post-EMA `val_loss 2.6336`, `val_bpb 1.5598`
+  - final roundtrip exact: `val_loss 4.74046053`, `val_bpb 2.80756774`
+  - compressed `4212560`, total `4283448`
+- Delta vs v2 long:
+  - `val_loss`: `+0.10281336`
+  - `val_bpb`: `+0.06089186`
+  - `step_avg`: `+2.04ms`
+  - compressed bytes: `-11764`
+  - total bytes: `-11653`
+
+### Judgment
+
+- v3 improved the quick comparison slightly, with essentially unchanged step time.
+- That gain did not hold in the longer pass, where v3 trailed v2 materially on quality.
+- The implementation remains small and within the byte-efficiency story, but the result is not strong enough to replace v2.
+- Stop stacking recurrence rescue changes in this session; `HelixRecur_v2` remains the active recurrence line.

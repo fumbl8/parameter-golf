@@ -1,0 +1,10 @@
+{
+  "author": "OpenAI Codex",
+  "github_id": "codex",
+  "name": "Non-record: HelixRecur v3",
+  "blurb": "HelixRecur v2 plus four bounded learnable per-channel amplitudes for the existing virtual-depth conditioning path. Quick comparison improved slightly, but the 600s pass regressed against v2, so v2 remains the active line.",
+  "date": "2026-03-27T00:00:00Z",
+  "val_loss": 4.74046053,
+  "val_bpb": 2.80756774,
+  "bytes_total": 4283448
+}
