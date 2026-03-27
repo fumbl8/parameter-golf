@@ -666,3 +666,78 @@ records/track_10min_16mb/2026-03-22_11L_EMA_GPTQ-lite_warmdown3500_QAT015_1.1233
 - `v2a` showed that more conditioning capacity can sharpen the quick proxy, but its longer trajectory was worse than v2 despite a slightly smaller final artifact.
 - `v2` remains the active recurrence champion.
 - No further recurrence micro-variants should be stacked in this session without a materially different hypothesis.
+
+## 2026-03-27 HelixGeneDelta v1 Quick Test
+
+- New folder: `records/track_non_record_16mb/2026-03-27_HelixGeneDelta_v1`
+- Hypothesis only: keep `HelixRecur_v2` intact except for replacing the tiny scalar virtual-depth conditioning with a compile-friendly gene-coded rank-2 specialization on the MLP gate path only
+- Preserved unchanged from v2: `6` shared blocks, virtual schedule `0,1,2,3,4,5,4,3,2,1,0`, tied embeddings, BigramHash, SmearGate, shared value embeddings, optimizer family, quantization/compression path, and eval path
+- Added parameters only in the new specialization path:
+  - `11 x 2` virtual-depth gene codes = `22`
+  - shared rank-2 MLP gate basis = `3072`
+  - exact gene-path parameter count = `3094`
+  - exact added params vs v2 = `+3050`
+
+### Commands Run
+
+- Compile sanity:
+  - `python -m py_compile records/track_non_record_16mb/2026-03-27_HelixGeneDelta_v1/train_gpt.py`
+- Instantiate sanity:
+  - `python - <<'PY' ... import records/track_non_record_16mb/2026-03-27_HelixGeneDelta_v1/train_gpt.py and instantiate GPT ... PY`
+- Train smoke:
+  - `env RUN_ID=helixgene-delta-v1-train-smoke SEED=1337 MAX_WALLCLOCK_SECONDS=45 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-27_HelixGeneDelta_v1/train_gpt.py > helixgene_delta_v1_train_smoke.out 2>&1`
+- Eval smoke:
+  - `env RUN_ID=helixgene-delta-v1-eval-smoke SEED=1337 MAX_WALLCLOCK_SECONDS=1 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-27_HelixGeneDelta_v1/train_gpt.py > helixgene_delta_v1_eval_smoke.out 2>&1`
+- Solo quick comparison:
+  - `env RUN_ID=helixgene-delta-v1-quickcmp SEED=1337 MAX_WALLCLOCK_SECONDS=180 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-27_HelixGeneDelta_v1/train_gpt.py > helixgene_delta_v1_quickcmp.out 2>&1`
+
+### Sanity Results
+
+- Compile sanity passed
+- Instantiate sanity:
+  - `gene_delta_model_params 15190090`
+  - `gene_delta_gene_params 3094`
+  - `gene_delta_virtual_gene_codes 22`
+  - `gene_delta_mlp_gene_basis 3072`
+  - `gene_delta_added_vs_v2 3050`
+  - `gene_delta_shared_num_layers 6`
+  - `gene_delta_virtual_schedule 0,1,2,3,4,5,4,3,2,1,0`
+
+### Smoke Results
+
+- Train smoke:
+  - stop `45.447s`, `step 67`, `step_avg 678.31ms`
+  - `val_loss 6.0832`, `val_bpb 3.6028`
+  - post-EMA `val_loss 6.0700`, `val_bpb 3.5950`
+  - final roundtrip exact: `val_loss 6.09674746`, `val_bpb 3.61083726`
+  - compressed `2802415`, total `2873448`
+- Eval smoke:
+  - stop `1.377s`, `step 2`, `step_avg 688.39ms`
+  - `val_loss 8.7284`, `val_bpb 5.1695`
+  - post-EMA `val_loss 6.9062`, `val_bpb 4.0902`
+  - final roundtrip exact: `val_loss 6.91002561`, `val_bpb 4.09250639`
+  - compressed `2642146`, total `2713179`
+
+### v2 vs HelixGeneDelta v1 Quick Comparison
+
+- HelixRecur v2 quick anchor from prior ledger entry:
+  - `val_loss 7.54165596`, `val_bpb 4.46659346`, compressed `3042658`, total `3113435`, `step_avg 675.97ms`
+- HelixGeneDelta v1 quick:
+  - stop `180.353s`, `step 267`, `step_avg 675.48ms`
+  - pre-roundtrip stop metric: `val_loss 3.7790`, `val_bpb 2.2382`
+  - post-EMA diagnostic: `val_loss 6.9712`, `val_bpb 4.1287`
+  - final roundtrip exact: `val_loss 7.55187900`, `val_bpb 4.47264812`
+  - compressed `3032219`, total `3103252`
+- Delta vs v2 quick:
+  - `val_loss`: `+0.01022304`
+  - `val_bpb`: `+0.00605466`
+  - `step_avg`: `-0.49ms` (`-0.07%`)
+  - compressed bytes: `-10439`
+  - total bytes: `-10183`
+
+### Judgment
+
+- The single-hypothesis gene-coded rank-2 MLP specialization is compile-friendly and effectively runtime-neutral, but it did not improve the quick proxy.
+- The byte savings are real but too small to justify a `+0.00605466 val_bpb` regression against the active `HelixRecur_v2` champion.
+- This is a no-go for the current recurrence line.
+- Future grant-funded work should not continue this exact scalar-replacement direction; if the grant wants a recurrence follow-up, the next test should move to a materially different mechanism rather than another depth-conditioning variant.

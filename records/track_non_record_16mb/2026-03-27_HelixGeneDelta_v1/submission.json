@@ -1,0 +1,10 @@
+{
+  "author": "OpenAI Codex",
+  "github_id": "codex",
+  "name": "Non-record: HelixGeneDelta v1",
+  "blurb": "HelixRecur v2 with the scalar virtual-depth table replaced by 11 tiny rank-2 gene codes that specialize only the shared MLP gate path across the fixed 6-block recurrent schedule.",
+  "date": "2026-03-27T00:00:00Z",
+  "val_loss": 7.55187900,
+  "val_bpb": 4.47264812,
+  "bytes_total": 3103252
+}
