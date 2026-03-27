@@ -297,3 +297,77 @@ records/track_10min_16mb/2026-03-22_11L_EMA_GPTQ-lite_warmdown3500_QAT015_1.1233
 - Local wallclock cap was increased to `4800s` to match donor step depth on one GPU.
 - SWA and late-QAT landed slightly later than donor: `swa:start 6550` vs `6450`, `late_qat 6713` vs `6574`.
 - Compressed bytes did not match donor: total bytes were `+585623` over donor and exceeded the donor's `15.55 MB` artifact.
+
+## 2026-03-27 HelixRecur v1 Byte Budget Note
+
+- Base donor for recurrence fork: `records/track_10min_16mb/2026-03-22_11L_EMA_GPTQ-lite_warmdown3500_QAT015_1.1233`
+- Donor compressed model bytes: `16073037`
+- Donor total submission bytes: `16140640`
+- Current overage vs `16,000,000`: `140640` bytes
+- HelixRecur v1 code bytes: `69074` vs donor `67603` (`+1471` code bytes risk)
+- HelixRecur v1 parameter count estimate: `15186996` vs donor `26993756`
+- Expected recurrence effect: replacing 11 distinct blocks with 6 shared blocks should materially reduce compressed model bytes by reusing transformer weights while preserving donor embeddings, BigramHash, SmearGate, value embeddings, quantization, and eval.
+- Main byte risk introduced by the recurrence refactor: extra schedule/runtime plumbing increases counted code modestly, so byte improvement must come primarily from lower model payload rather than code shrinkage.
+
+## 2026-03-27 HelixRecur v1 Implementation And Evaluation
+
+- New folder: `records/track_non_record_16mb/2026-03-26_HelixRecur_v1`
+- Major hypothesis only: replace donor's 11 distinct depth blocks with 6 shared recurrent blocks on schedule `0,1,2,3,4,5,4,3,2,1,0`.
+- Preserved unchanged from donor: tied embeddings, BigramHash, SmearGate, shared value embeddings, optimizer family, quantization/compression path, and eval path.
+- Extra recurrence machinery kept minimal: runtime schedule lookup plus virtual-depth ln-scale/XSA overrides; no routing, no TTT, no tokenizer or dataset changes.
+
+### Commands Run
+
+- Compile sanity:
+  - `python -m py_compile records/track_non_record_16mb/2026-03-26_HelixRecur_v1/train_gpt.py`
+- Parameter estimate:
+  - `python - <<'PY' ... instantiate GPT from records/track_non_record_16mb/2026-03-26_HelixRecur_v1/train_gpt.py ... PY`
+- HelixRecur train smoke:
+  - `env RUN_ID=helixrecur-train-smoke SEED=1337 MAX_WALLCLOCK_SECONDS=45 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-26_HelixRecur_v1/train_gpt.py > helixrecur_train_smoke.out 2>&1`
+- HelixRecur eval smoke:
+  - `env RUN_ID=helixrecur-eval-smoke SEED=1337 MAX_WALLCLOCK_SECONDS=1 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-26_HelixRecur_v1/train_gpt.py > helixrecur_eval_smoke.out 2>&1`
+- Donor quick comparison:
+  - `env RUN_ID=donor-quickcmp SEED=1337 MAX_WALLCLOCK_SECONDS=180 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_10min_16mb/2026-03-22_11L_EMA_GPTQ-lite_warmdown3500_QAT015_1.1233/train_gpt.py > donor_quickcmp.out 2>&1`
+- HelixRecur quick comparison:
+  - `env RUN_ID=helixrecur-quickcmp SEED=1337 MAX_WALLCLOCK_SECONDS=180 EVAL_SEQ_LEN=64 TRAIN_LOG_EVERY=1000 VAL_LOSS_EVERY=4000 DATA_PATH=/workspace/parameter-golf/data/datasets/fineweb10B_sp1024 TOKENIZER_PATH=/workspace/parameter-golf/data/tokenizers/fineweb_1024_bpe.model torchrun --standalone --nproc_per_node=1 records/track_non_record_16mb/2026-03-26_HelixRecur_v1/train_gpt.py > helixrecur_quickcmp.out 2>&1`
+
+### Results
+
+- HelixRecur train smoke:
+  - stop `45.116s`, `step 69`, `step_avg 653.85ms`
+  - final roundtrip `val_loss 6.08586880`, `val_bpb 3.60439430`
+  - compressed bytes `2,797,394`, total bytes `2,866,468`
+- HelixRecur eval smoke:
+  - stop `1.329s`, `step 2`
+  - final roundtrip `val_loss 6.91002561`, `val_bpb 4.09250639`
+  - compressed bytes `2,636,270`, total bytes `2,705,344`
+- Donor quick comparison:
+  - stop `180.427s`, `step 270`, `step_avg 668.25ms`
+  - final roundtrip `val_loss 7.55493163`, `val_bpb 4.47445606`
+  - compressed bytes `5,019,273`, total bytes `5,086,876`
+- HelixRecur quick comparison:
+  - stop `180.212s`, `step 275`, `step_avg 655.32ms`
+  - final roundtrip `val_loss 7.85509273`, `val_bpb 4.65222837`
+  - compressed bytes `3,081,539`, total bytes `3,150,613`
+
+### Donor vs HelixRecur Quick Comparison
+
+- `val_loss`: recurrence worse by `+0.30016110`
+- `val_bpb`: recurrence worse by `+0.17777231`
+- Train wallclock: recurrence better by about `0.215s` at stop, with better `step_avg` (`655.32ms` vs `668.25ms`)
+- Compressed model bytes: recurrence better by `-1,937,734`
+- Total bytes: recurrence better by `-1,936,263`
+- Byte compliance story: recurrence moves strongly toward compliance on quick runs, but the quality collapse is too large to justify a longer pass.
+
+### Stability Notes
+
+- Compile sanity passed.
+- Train/eval/quantization/compression paths all completed successfully in the new folder.
+- Code churn stayed isolated to the new submission folder plus `EXPERIMENT_LEDGER.md`.
+- Observed behavior suggests the recurrence fork remains operational but loses too much depth-specific capacity in this first form.
+
+### Judgment
+
+- Kill criteria triggered: `val_bpb` is worse by far more than `0.010` on the quick comparison.
+- The byte-efficiency upside is real, but not enough to justify a longer non-record pass for this exact v1 design.
+- HelixRecur v1 is a no-go as currently implemented.

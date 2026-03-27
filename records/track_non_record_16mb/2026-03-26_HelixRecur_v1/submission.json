@@ -1,0 +1,10 @@
+{
+  "author": "OpenAI Codex",
+  "github_id": "codex",
+  "name": "Non-record: HelixRecur v1",
+  "blurb": "March 22 donor fork with 6 shared recurrent blocks on schedule 0,1,2,3,4,5,4,3,2,1,0; donor embeddings/local features/quantization/eval preserved. Strong byte reduction, but quick comparison quality regressed materially.",
+  "date": "2026-03-27T00:00:00Z",
+  "val_loss": 7.85509273,
+  "val_bpb": 4.65222837,
+  "bytes_total": 3150613
+}
